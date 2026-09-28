@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #182421;
+  background: #F7F7F3;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { min-height: 100%; margin: 0; }
+body { background: #F7F7F3; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+::selection { background: #DDE8D9; color: #182421; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #C9D1CA; border-radius: 999px; }
+
+.font-display { font-family: Georgia, "Times New Roman", serif; }
+.theme-dark { color-scheme: dark; }
+.theme-dark body { background: #18201B; }
+
+
+/* Intentional dark theme: preserve the same hierarchy and calm palette. */
+.dark-ui { background:#18201B !important; color:#E9EEE8; }
+.dark-ui .bg-bg { background:#18201B !important; }
+.dark-ui .bg-card, .dark-ui .bg-white { background:#202A23 !important; }
+.dark-ui .text-ink { color:#E9EEE8 !important; }
+.dark-ui .text-muted { color:#AAB5AE !important; }
+.dark-ui .text-faint { color:#7F8B84 !important; }
+.dark-ui .text-brand { color:#7FBF8E !important; }
+.dark-ui .border-brand { border-color:#4E7A5A !important; }
+.dark-ui .border-border { border-color:#344238 !important; }
+.dark-ui input, .dark-ui textarea, .dark-ui select { background:#222D25 !important; color:#E9EEE8; border-color:#3A4A3D !important; }
+.dark-ui .bg-soft { background:#2B3A2E !important; }
+.dark-ui .bg-amber { background:#3D3418 !important; }
+.dark-ui .bg-blue { background:#1E2C38 !important; }
+.dark-ui .bg-red { background:#3A2420 !important; }
+/* Neutral near-white card tints used across screens (Overview, Dashboard tables, etc.) */
+.dark-ui .bg-\[\#FAFBF9\] { background:#202A23 !important; }
+.dark-ui .bg-\[\#F4F6F3\] { background:#253127 !important; }
+.dark-ui .bg-\[\#EEF1ED\] { background:#2B352E !important; }
+.dark-ui .bg-\[\#EEF0ED\] { background:#2B352E !important; }
+.dark-ui .bg-\[\#F0F3EF\] { background:#2B352E !important; }
+.dark-ui .bg-\[\#F7F8F6\] { background:#202A23 !important; }
+.dark-ui .bg-\[\#F8F9F6\] { background:#202A23 !important; }
+.dark-ui .bg-\[\#F8F1EC\] { background:#3A2E20 !important; }
+.dark-ui .bg-\[\#EEEAF8\] { background:#292040 !important; }
+.dark-ui .bg-\[\#DCE1DC\] { background:#2B352E !important; }
+/* Solid accent-colored chips (platform badges, node markers) — darken slightly for less glare, keep hue */
+.dark-ui .bg-\[\#6585A8\] { background:#4E6E8E !important; }
+.dark-ui .bg-\[\#6B5AA0\] { background:#584789 !important; }
+.dark-ui .bg-\[\#B96255\] { background:#A04E42 !important; }
+.dark-ui .bg-\[\#C79B42\] { background:#AD8433 !important; }
+.dark-ui .hover\:bg-\[\#FAFBF9\]:hover { background:#263228 !important; }

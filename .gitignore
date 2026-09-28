@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+backend/data/*
+!backend/data/demo/
+backend/data/demo/*
+!backend/data/demo/riya-demo.ppm
+.rocketride/
+*.tsbuildinfo

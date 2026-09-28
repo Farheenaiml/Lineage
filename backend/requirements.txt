@@ -1,0 +1,48 @@
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+sqlalchemy==2.0.53
+pydantic==2.13.5
+pydantic-settings==2.15.0
+email-validator==2.3.0
+python-jose[cryptography]==3.5.0
+bcrypt==5.0.0
+python-multipart==0.0.32
+cryptography==46.0.6
+python-dotenv==1.2.2
+psycopg2-binary==2.9.9
+reportlab==4.4.10
+anthropic==1.5.0
+google-genai>=2.25.0,<3.0.0
+
+# --- Phase 2: real ML models ---
+# Pinned together deliberately — a from-scratch `pip install` of this file
+# was tested (in an isolated venv) and failed twice before landing on these
+# exact versions:
+#   1. numpy: opencv-python-headless>=4.10 requires numpy>=2, but
+#      facenet-pytorch 2.6.0 requires numpy<2. Fixed by pinning
+#      opencv-python-headless to 4.9.0.80, the newest release still on the
+#      numpy<2 side, and leaving numpy unpinned so pip resolves it itself.
+#   2. Pillow: facenet-pytorch 2.6.0 requires Pillow>=10.2.0,<10.3.0 — a
+#      narrow window. Pillow==10.2.0 satisfies that and reportlab/torchvision's
+#      looser requirements too.
+#   3. transformers>=4.50 requires torch>=2.5, but facenet-pytorch's own
+#      resolution pulls in torch 2.2.2, which then silently disables
+#      transformers' PyTorch backend. transformers==4.46.3 is the newest
+#      release that still works correctly with torch 2.2.x.
+# The lines below install the CPU-only torch build. The default PyPI torch
+# wheel pulls in ~2.5GB of NVIDIA CUDA libraries this project never uses
+# (there's no GPU-dependent code here) — the CPU wheel avoids that entirely.
+# If you specifically want GPU acceleration, remove the --extra-index-url
+# line and the "+cpu" suffixes below; pip will then install the standard
+# (larger) CUDA-enabled build instead.
+--extra-index-url https://download.pytorch.org/whl/cpu
+numpy<2
+Pillow==10.2.0
+opencv-python-headless==4.9.0.80
+torch==2.2.2+cpu
+torchvision==0.17.2+cpu
+facenet-pytorch==2.6.0
+transformers==4.46.3
+
+# Add when you're ready to run real migrations instead of create_all():
+# alembic==1.13.2
