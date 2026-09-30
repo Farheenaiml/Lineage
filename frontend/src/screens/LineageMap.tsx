@@ -1,10 +1,15 @@
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import { Info, Plus, Minus, Maximize2, MousePointer2, ExternalLink } from "lucide-react";
 import { useCase } from "../context/CaseContext";
 import { toDisplaySources, toDisplayRelationships } from "../lib/adapters";
 import { AsyncBlock, EmptyState } from "../components/states";
 import { Panel, PanelHeader, PrimaryButton, StatusBadge } from "../components/ui";
 import AddSourceModal from "../components/AddSourceModal";
+const PropagationMap = lazy(() => import("../components/geo/PropagationMap"));
+import { Globe2, Network, Sparkles, Brain } from "lucide-react";
+import InvestigationCopilot from "../components/copilot/InvestigationCopilot";
+import MLIntelligence from "../components/ml/MLIntelligence";
+import { consumeLineageFocus } from "../lib/focus";
 
 const pos: any = {
   "SRC-A": [350, 70],
@@ -14,11 +19,11 @@ const pos: any = {
   "SRC-E": [700, 350],
 };
 
-export default function LineageMap() {
+function SourceGraphView({ initialSelectedId = null, onOpenEvidence }: { initialSelectedId?: string | null; onOpenEvidence?: () => void }) {
   const { sources: sourcesSlice, relationships: relsSlice } = useCase();
   const sources = toDisplaySources(sourcesSlice.data);
   const sourceRelationships = toDisplayRelationships(relsSlice.data, sources);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
   const [zoom, setZoom] = useState(1);
   const [showAddSource, setShowAddSource] = useState(false);
   const selected = sources.find((s) => s.id === selectedId) ?? sources[0] ?? null;
@@ -85,8 +90,8 @@ export default function LineageMap() {
             empty={
               <div className="p-6">
                 <EmptyState
-                  title="No propagation data yet"
-                  detail="The lineage graph is built from the sources you record. Add the first observed source to start building it."
+                  title="No source is currently established."
+                  detail="The lineage graph is built only from the sources you record. Add the first observed source to start building it."
                   action={<PrimaryButton onClick={() => setShowAddSource(true)}>+ Add Source</PrimaryButton>}
                 />
               </div>
@@ -177,7 +182,7 @@ export default function LineageMap() {
                 </div>
               ))}
             </div>
-            <button className="mt-4 text-[12px] font-semibold text-brand hover:underline flex items-center gap-1">
+            <button onClick={onOpenEvidence} className="mt-4 text-[12px] font-semibold text-brand hover:underline flex items-center gap-1">
               <ExternalLink size={14} /> View preserved evidence
             </button>
             </>)}
@@ -203,6 +208,52 @@ export default function LineageMap() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+/**
+ * Lineage / Propagation screen. The original source graph is preserved untouched
+ * as one tab; the 3D location/propagation globe is a sibling tab; the Phase 3B
+ * Investigation Copilot is a third tab that links back into the other two.
+ */
+export default function LineageMap({ onNavigate }: { onNavigate?: (s: any) => void }) {
+  // Phase 5: another screen may ask us to open on a tab / source / location (consumed once).
+  const [initial] = useState(() => consumeLineageFocus());
+  const [tab, setTab] = useState<"map" | "graph" | "copilot" | "ml">(initial?.tab ?? "map");
+  const [focusNode, setFocusNode] = useState<string | null>(initial?.mapNodeId ?? null);
+  const [focusSource, setFocusSource] = useState<string | null>(initial?.sourceId ?? null);
+  const openGraph = (sourceId?: string) => { setFocusSource(sourceId ?? null); setTab("graph"); };
+  return (
+    <div className="space-y-5">
+      <div className="inline-flex flex-wrap p-1 rounded-2xl bg-card border border-border shadow-card">
+        {([["map", "3D Propagation Map", Globe2], ["graph", "Source Graph", Network], ["copilot", "Investigation Copilot", Sparkles], ["ml", "ML Intelligence", Brain]] as const).map(([k, label, Icon]) => (
+          <button key={k} onClick={() => { setTab(k); setFocusNode(null); setFocusSource(null); }}
+            className={`px-4 h-9 rounded-xl text-[12.5px] font-semibold inline-flex items-center gap-2 transition ${tab === k ? "bg-brand text-white shadow-sm" : "text-muted hover:text-ink"}`}>
+            <Icon size={15} /> {label}
+          </button>
+        ))}
+      </div>
+      {tab === "map" ? (
+        <Suspense fallback={<div className="py-16 text-center text-[13px] text-muted">Loading 3D engine…</div>}><PropagationMap onViewSources={(sourceId) => openGraph(sourceId)} onNavigate={onNavigate} focusNodeId={focusNode} /></Suspense>
+      ) : tab === "graph" ? (
+        <SourceGraphView key={focusSource ?? "all"} initialSelectedId={focusSource} onOpenEvidence={() => onNavigate?.("evidence")} />
+      ) : tab === "ml" ? (
+        <MLIntelligence
+          onOpenEvidence={() => onNavigate?.("evidence")}
+          onOpenSource={openGraph}
+          onOpenGraph={openGraph}
+          onOpenLocation={(id) => { setFocusNode(id); setTab("map"); }}
+        />
+      ) : (
+        <InvestigationCopilot
+          onOpenEvidence={() => onNavigate?.("evidence")}
+          onOpenSource={openGraph}
+          onOpenGraph={openGraph}
+          onOpenLocation={(id) => { setFocusNode(id); setTab("map"); }}
+        />
+      )}
     </div>
   );
 }

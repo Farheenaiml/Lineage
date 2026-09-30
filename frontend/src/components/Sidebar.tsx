@@ -21,6 +21,7 @@ export type ScreenKey =
   | "lineage"
   | "gap"
   | "report"
+  | "automation"
   | "roadmap"
   | "settings";
 

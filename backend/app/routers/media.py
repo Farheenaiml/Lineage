@@ -15,7 +15,8 @@ from app.models.media import MediaItem, DetectionResult, Fingerprint
 from app.models.source import EvidenceItem, Source, UPLOAD_SOURCE_PLATFORM
 from app.models.user import User
 from app.schemas.media import MediaItemOut, DetectionResultOut, FingerprintOut
-from app.services import file_storage, pixel_analysis, deepfake_model, face_embedding
+from app.services import file_storage, pixel_analysis, deepfake_model, face_embedding, exif_gps, model_explainability
+from app.models.location import SourceLocation
 from app.routers.incidents import _get_owned_incident
 
 router = APIRouter(prefix="/incidents", tags=["media"])
@@ -150,6 +151,31 @@ async def upload_media(
     db.flush()
     _ensure_upload_evidence(incident, media, db)
 
+    # Real EXIF GPS -> verified-tier location on the upload source (Phase 1 map).
+    # Only recorded when the file actually carries a GPS block; never guessed.
+    if kind == "image":
+        gps = exif_gps.extract_gps(raw)
+        if gps:
+            db.flush()
+            ev = (
+                db.query(EvidenceItem)
+                .filter(EvidenceItem.incident_id == incident.id, EvidenceItem.storage_path == media.storage_path)
+                .first()
+            )
+            if ev and ev.source_id:
+                db.add(SourceLocation(
+                    source_id=ev.source_id,
+                    latitude=gps["latitude"],
+                    longitude=gps["longitude"],
+                    place_name=None,
+                    provenance="exif_gps",
+                    confidence=90.0,
+                    basis=f"GPS block read from EXIF metadata of uploaded file '{media.original_filename}'. "
+                          "EXIF can be edited or stripped; treat as metadata-derived, not proof of capture location.",
+                    evidence_item_id=ev.id,
+                    recorded_by="system:exif",
+                ))
+
     if incident.status == "created":
         incident.status = "analyzing"
 
@@ -171,6 +197,32 @@ def preview_media_file(
     media_type = mimetypes.guess_type(media.original_filename)[0]
     if not media_type:
         media_type = "video/mp4" if media.kind == "video" else "image/jpeg"
+    return Response(
+        content=raw,
+        media_type=media_type,
+        headers={"Content-Disposition": "inline", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.get("/{incident_id}/media/{media_id}/analysis-frame")
+def preview_analysis_frame(
+    incident_id: str,
+    media_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the same still image or video key frame used by detection."""
+    media = _get_media_item(incident_id, media_id, db, current_user)
+    raw = file_storage.read_decrypted(media.storage_path)
+    if media.kind == "video":
+        try:
+            suffix = Path(media.original_filename).suffix or ".mp4"
+            raw = pixel_analysis.extract_video_frame_jpeg(raw, suffix=suffix)
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Could not extract the analysis frame: {e}")
+        media_type = "image/jpeg"
+    else:
+        media_type = mimetypes.guess_type(media.original_filename)[0] or "image/jpeg"
     return Response(
         content=raw,
         media_type=media_type,
@@ -230,6 +282,48 @@ def run_detection(
             f"see TRD §5.1."
         )
 
+    explainability = None
+    try:
+        face_box = None
+        face_confidence = None
+        face_status = "not_detected"
+        if frame_bytes:
+            face_result = face_embedding.detect_face_region_from_bytes(frame_bytes)
+            if face_result.found_face:
+                face_status = "detected"
+                face_box = face_result.box
+                face_confidence = face_result.detection_confidence
+            explainability = model_explainability.generate_occlusion_sensitivity(
+                raw_bytes=frame_bytes,
+                model_result=model_result,
+                face_box=face_box,
+                face_confidence=face_confidence,
+                face_status=face_status,
+                frame_timestamp_sec=getattr(heuristic, "frame_timestamp_sec", None),
+            )
+        else:
+            explainability = model_explainability.generate_occlusion_sensitivity(
+                raw_bytes=b"",
+                model_result=model_result,
+                face_box=None,
+                face_confidence=None,
+                face_status="not_detected",
+                frame_timestamp_sec=getattr(heuristic, "frame_timestamp_sec", None),
+            )
+    except Exception as exc:
+        explainability = {
+            "status": "unavailable",
+            "method": "blur-occlusion-sensitivity-v1",
+            "message": f"Heatmap generation was unavailable ({type(exc).__name__}: {exc}).",
+            "face_box": None,
+            "face_confidence": None,
+            "grid": None,
+            "frame_timestamp_sec": getattr(heuristic, "frame_timestamp_sec", None),
+        }
+
+    if explainability and explainability.get("status") == "available":
+        explanation = f"{explanation} Explainability: {explainability.get('message', 'Heatmap available.')}"
+
     existing = db.query(DetectionResult).filter(DetectionResult.media_item_id == media.id).first()
     if existing:
         db.delete(existing)
@@ -244,6 +338,7 @@ def run_detection(
         likely_technique=None,
         model_name=model_name,
         explanation=explanation,
+        explainability_json=json.dumps(explainability) if explainability is not None else None,
     )
     db.add(detection)
     db.commit()

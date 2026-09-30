@@ -46,6 +46,7 @@ class DetectionResult(Base):
     likely_technique = Column(String, nullable=True)
     model_name = Column(String, default="pixel-heuristic-v1")  # honestly named, not "deepfake-detector"
     explanation = Column(Text, nullable=True)
+    explainability_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     media_item = relationship("MediaItem", back_populates="detection_result")

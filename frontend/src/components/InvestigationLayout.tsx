@@ -19,6 +19,7 @@ const tabs: { key: ScreenKey; label: string }[] = [
   { key: "lineage", label: "Lineage / Propagation" },
   { key: "gap", label: "Attribution Gap" },
   { key: "report", label: "Incident Report" },
+  { key: "automation", label: "Case Automation" },
 ];
 
 function formatDate(iso: string | undefined) {

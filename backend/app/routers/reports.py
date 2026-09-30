@@ -9,6 +9,7 @@ from app.deps import get_current_user
 from app.models.report import IncidentReport
 from app.models.user import User
 from app.schemas.report import IncidentReportOut, IncidentReportPayload
+from app.services import audit
 from app.services.report_builder import build_report_payload
 from app.services.report_pdf import render_report_pdf
 from app.routers.incidents import _get_owned_incident
@@ -42,6 +43,9 @@ def generate_report(
     report = IncidentReport(incident_id=incident.id, report_json=payload.model_dump_json())
     db.add(report)
     incident.status = "report_generated"
+    db.flush()
+    audit.record(db, incident.id, current_user, "legacy_report_generated", target_type="report",  # Phase 5 audit trail
+                 target_id=report.id, commit=False)
     db.commit()
     db.refresh(report)
     return _to_out(report)

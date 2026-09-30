@@ -9,6 +9,7 @@ import EvidenceLocker from "./screens/EvidenceLocker";
 import LineageMap from "./screens/LineageMap";
 import AttributionGap from "./screens/AttributionGap";
 import IncidentReport from "./screens/IncidentReport";
+import CaseAutomation from "./screens/CaseAutomation";
 import Roadmap from "./screens/Roadmap";
 import Landing from "./screens/Landing";
 import Login from "./screens/Login";
@@ -32,6 +33,7 @@ function screenFromPath(path: string): ScreenKey | "landing" | "login" {
   if (path.includes("/lineage")) return "lineage";
   if (path.includes("/attribution")) return "gap";
   if (path.includes("/report")) return "report";
+  if (path.includes("/automation")) return "automation";
   if (path.startsWith("/investigations/")) return "overview";
   if (path === "/roadmap") return "roadmap";
   if (path === "/settings") return "settings";
@@ -49,6 +51,7 @@ const paths: Record<ScreenKey, string> = {
   lineage: "/investigations/INC-2024-012/lineage",
   gap: "/investigations/INC-2024-012/attribution",
   report: "/investigations/INC-2024-012/report",
+  automation: "/investigations/INC-2024-012/automation",
   roadmap: "/roadmap",
   settings: "/settings",
 };
@@ -61,6 +64,7 @@ const investigationScreenKeys = new Set<ScreenKey>([
   "lineage",
   "gap",
   "report",
+  "automation",
 ]);
 
 export default function App() {
@@ -166,9 +170,10 @@ function AppShell() {
                 {route === "detection" && <UploadDetection />}
                 {route === "fingerprint" && <FingerprintScreen />}
                 {route === "evidence" && <EvidenceLocker />}
-                {route === "lineage" && <LineageMap />}
+                {route === "lineage" && <LineageMap onNavigate={navigate} />}
                 {route === "gap" && <AttributionGap onNavigate={navigate} />}
                 {route === "report" && <IncidentReport />}
+                {route === "automation" && <CaseAutomation onNavigate={navigate} />}
               </InvestigationLayout>
             ) : (
               <div className="max-w-[1400px] mx-auto">

@@ -1,4 +1,4 @@
-# LINEAGE — Full Stack (Phases 1–3 Complete)
+# LINEAGE — Full Stack (Phases 1–6 Complete)
 
 AI-powered synthetic identity abuse investigation platform.
 **Don't just detect the deepfake. Trace the attack.**
@@ -57,6 +57,21 @@ npm run dev
 
 App runs at `http://localhost:5173`.
 
+### Optional — Neo4j (graph persistence)
+
+The app works without Neo4j; the investigation graph is then served from memory.
+To persist it in Neo4j Community:
+
+```bash
+cd backend
+docker compose up -d neo4j          # Browser http://localhost:7474, Bolt bolt://localhost:7687
+```
+
+Then in `backend/.env` set `NEO4J_URI=bolt://localhost:7687` and `NEO4J_PASSWORD=<the NEO4J_PASSWORD
+you started compose with; dev default lineage-dev-password>` and restart the backend. `GET /health`
+reports `"neo4j": "connected"` (or `"fallback"`). Sync manually with
+`python -m app.services.graph_sync sync-all` (idempotent; safe to repeat).
+
 ### Setting up your first case
 
 This app ships with zero data — there's no seeded/demo content anywhere. To
@@ -95,6 +110,99 @@ evidence — is created by you, through the app, and stored for real.
 6. **New Case**, top of the sidebar, to start a second, independent
    investigation — upload a different file and it goes through the same
    real pipeline.
+
+---
+
+## Architecture (Phases 1–6)
+
+| Phase | What it adds | Where |
+|---|---|---|
+| Base | Auth, cases, encrypted media, detection, fingerprints, sources, evidence, attribution gap, incident report | `routers/`, `services/` |
+| 1 | Source locations with provenance tiers (EXIF = verified, investigator, inferred), 3D propagation map | `models/location.py`, `routers/geo.py`, `components/geo/` |
+| 2 | Geographic heatmap, hotspots, activity score | `services/geo_intel.py`, `/geo-stats` |
+| 3A | Investigation knowledge graph; persisted to **Neo4j** with automatic in-memory fallback | `services/knowledge_graph.py`, `neo4j_service.py`, `graph_store.py` (all Cypher), `graph_sync.py` |
+| 3B | **Investigation Copilot** (Graph RAG) | `services/graph_rag.py`, `POST /incidents/{id}/copilot` |
+| 4 | **ML Intelligence**: visual similarity, unusual patterns, clusters | `services/ml_intelligence.py`, `/incidents/{id}/ml…` |
+| 5 | **Case Automation**: summary, evidence gaps, timeline, versioned report, alert DRAFT, export, workflow status, audit trail | `services/case_automation.py`, `routers/automation.py`, `services/audit.py` |
+| 6 | Integration, navigation fixes, per-request graph reuse, docs | — |
+
+Every module reads the same records through one graph (`graph_sync.load_graph`), so investigation, media,
+evidence, source, platform, account, location, fingerprint and detection IDs are identical everywhere.
+Phase notes: `PHASE1_NOTES.md` … `PHASE4_5_NOTES.md`.
+
+**Integrity rules (enforced in code and covered by tests):** nothing is fabricated; missing data is reported as a
+gap; `confirmed` / `inferred` / `unknown` statuses are copied, never upgraded; ML output is labelled analysis
+("visually similar", "unusual pattern"), never identity or proof; nothing is ever sent outside LINEAGE.
+
+### Investigation Copilot (Graph RAG)
+Detects the question's intent (appearances, sources, locations, propagation, evidence, missing information),
+retrieves the relevant graph relationships and evidence, and answers with every statement labelled
+**VERIFIED FACT / INFERENCE / UNKNOWN** plus evidence, source and location references. If nothing supports an
+answer it says **"Insufficient evidence."** With `ANTHROPIC_API_KEY` set, an LLM may rewrite the prose only; an LLM
+answer that cites unknown codes or hides insufficient evidence is discarded. The key stays on the backend.
+
+### ML Intelligence (Lineage → *ML Intelligence* tab)
+- **Similarity** — 64-bit perceptual hash (keyframes for video); stored face-embedding cosine shown separately.
+- **Anomalies** — bursts, unusually rapid spread, wide geographic spread, measured against the case's own baseline;
+  otherwise **"Insufficient data."**
+- **Clusters** — single-linkage groups of visually similar media with sources, platforms, locations, evidence.
+Each result shows model name/version, timestamp, score, factors and evidence, and can be marked reviewed.
+
+### Case Automation (investigation tab *Case Automation*)
+Summary (facts by status) · evidence gaps · timeline (OBSERVED / RECORDED / CONFIRMED / INFERRED / UNKNOWN) ·
+versioned investigation report + PDF · cyber-department alert **DRAFT — REQUIRES INVESTIGATOR REVIEW**
+(Edit / Approve / Export; approval only records the decision, nothing is sent; a draft needs media, evidence and an
+external source) · JSON/PDF export · status New → Analyzing → Evidence Collected → Review Required → Report Ready →
+Closed (investigator-controlled; ML never changes it) · audit trail with the authenticated actor.
+
+### Fallbacks
+| Condition | Behaviour |
+|---|---|
+| Neo4j not configured / down | Graph served from memory; UI shows "Neo4j unavailable — using in-memory graph." |
+| No LLM key | Copilot returns the grounded answer; UI shows "LLM unavailable — showing grounded graph/evidence context." |
+| Too little data for ML | "Insufficient data." (no synthetic data is created) |
+| No location / relationship / evidence | Empty states and evidence gaps; nothing is guessed |
+
+## Environment variables (`backend/.env`, see `.env.example`)
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `DATABASE_URL` | no (SQLite default) | SQLAlchemy DSN |
+| `JWT_SECRET_KEY` | **yes for any shared deployment** | JWT signing secret |
+| `FILE_ENCRYPTION_KEY` | recommended | Fernet key for uploads (auto-generated locally if blank) |
+| `CORS_ORIGINS` | no | Allowed frontend origins |
+| `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE` | no | Neo4j connection (blank URI = in-memory graph) |
+| `NEO4J_CONNECT_TIMEOUT`, `NEO4J_RETRY_SECONDS`, `NEO4J_AUTO_SYNC` | no | Fallback timing; re-sync on read |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | no | Optional LLM (report summary, Copilot prose) |
+| `COPILOT_LLM_PROVIDER`, `COPILOT_MODEL`, `COPILOT_MAX_TOKENS` | no | Copilot LLM (`none` disables) |
+| `GEMINI_API_KEY`, `GEMINI_SEARCH_MODEL`, `MAX_WEB_SEARCHES_PER_MEDIA` | no | Consent-gated search-phrase generation |
+| `ML_SIMILARITY_THRESHOLD`, `ML_CLUSTER_THRESHOLD`, `ML_ANOMALY_MIN_OBSERVATIONS`, `ML_ANOMALY_MIN_RELATIONSHIPS`, `ML_BURST_RATIO`, `ML_GEO_SPREAD_KM` | no | ML thresholds |
+| `PRELOAD_MODELS`, `DATA_DIR`, `UPLOADS_DIR`, `MAX_UPLOAD_MB` | no | Runtime options |
+| `VITE_API_URL` (`frontend/.env`) | no | Backend URL for the frontend (no secrets go here) |
+
+Never commit `.env`; both `.env` files are gitignored.
+
+## Tests
+
+```bash
+cd backend
+pytest tests                                  # full suite; live-Neo4j tests skip without a server
+NEO4J_TEST_URI=bolt://localhost:7687 NEO4J_TEST_PASSWORD=<pw> pytest tests   # include live Neo4j
+cd ../frontend && npm run build              # TypeScript check (tsc -b) + production build
+```
+The frontend has no automated test runner.
+
+## Demo sequence
+
+1. Start Neo4j (optional), backend, frontend; log in (`demo@lineage.app`, pre-filled).
+2. Open a case → **Overview / Detection / Fingerprinting** (real model score + aHash) → **Evidence Locker**.
+3. **Lineage / Propagation** → *3D Propagation Map* (heatmap/hotspots) → *Source Graph*.
+4. *Investigation Copilot* → "What is the propagation path and what evidence supports it?"
+5. *ML Intelligence* → similarity / anomalies / clusters ("Insufficient data." where the case is too small).
+6. **Case Automation** → summary, gaps, timeline → *Generate* report → PDF.
+7. *Generate draft* → banner "DRAFT — REQUIRES INVESTIGATOR REVIEW" → Edit / Approve / Export (never sent);
+   cases without an external source get "Insufficient evidence for an alert draft."
+8. Set status, show the audit trail, *Export JSON*.
 
 ---
 
@@ -174,8 +282,12 @@ backend/
     schemas/    Pydantic request/response shapes
     services/   file_storage · pixel_analysis · face_embedding
                 deepfake_model · attribution · report_builder
-                report_pdf · llm_report
-    routers/    one per resource, matching TRD §6
+                report_pdf · llm_report · exif_gps · geo_intel
+                knowledge_graph · neo4j_service · graph_store · graph_sync
+                graph_rag · ml_intelligence · case_automation · audit · automation_pdf
+    routers/    one per resource (+ geo, graph, copilot, ml, automation)
+  tests/        pytest suite (unit, API, integration, live-Neo4j)
+  docker-compose.yml   Postgres + API + Neo4j Community
 frontend/
   src/
     lib/api.ts          typed client for every endpoint
@@ -209,6 +321,8 @@ using unpaid quota.
 
 - No Alembic migrations yet (`create_all` runs at startup)
 - No rate limiting on uploads (TRD §8)
-- No audit log on Evidence Locker access (TRD §8)
+- Investigator actions are audited (Phase 5), but merely *viewing* the Evidence Locker is not
 - Audio fingerprinting not implemented (Roadmap v3)
-- Docker files exist in `backend/` but are untested — deferred to deployment
+- Docker files exist in `backend/` but are untested in this build environment (Neo4j was verified with a local
+  Neo4j 5.26 Community server instead)
+- No frontend automated test runner; the UI was verified by build/type-check and API-level tests, not browser automation

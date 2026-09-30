@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, LoaderCircle, Search, CheckCircle2 } from "lucide-react";
 import { Panel, PanelHeader, ConfidenceBar, Notice, StatusBadge } from "../components/ui";
 import UploadDropzone from "../components/UploadDropzone";
@@ -7,6 +7,19 @@ import { useCase } from "../context/CaseContext";
 import { AsyncBlock, EmptyState } from "../components/states";
 import { statusLabel } from "../lib/pipeline";
 import { api, WebSearchRun } from "../lib/api";
+
+type ExplainabilityPayload = {
+  status: "available" | "unavailable";
+  method?: string;
+  message?: string;
+  face_box?: number[] | null;
+  face_confidence?: number | null;
+  grid?: number[][] | null;
+  frame_timestamp_sec?: number | null;
+  target_label?: string | null;
+  baseline_score?: number | null;
+  max_score_change?: number | null;
+};
 
 export default function UploadDetection() {
   const { incidentId, media, detection, fingerprint, incident, sources } = useCase();
@@ -21,11 +34,73 @@ export default function UploadDetection() {
   const likelihood = d?.manipulation_likelihood ?? 0;
   const tone: "red" | "amber" | "green" = likelihood >= 70 ? "red" : likelihood >= 40 ? "amber" : "green";
   const verdictLabel = likelihood >= 70 ? "High likelihood" : likelihood >= 40 ? "Moderate likelihood" : "Low likelihood";
+  const explainability = useMemo<ExplainabilityPayload | null>(() => {
+    if (!d?.explainability_json) return null;
+    try {
+      return JSON.parse(d.explainability_json) as ExplainabilityPayload;
+    } catch {
+      return null;
+    }
+  }, [d?.explainability_json]);
+  const heatmapGrid = explainability?.grid ?? [];
+  const [analysisFrameUrl, setAnalysisFrameUrl] = useState<string | null>(null);
   const [webSearchConfigured, setWebSearchConfigured] = useState<boolean | null>(null);
   const [webSearchConsent, setWebSearchConsent] = useState(false);
   const [webSearchBusy, setWebSearchBusy] = useState(false);
   const [webSearchError, setWebSearchError] = useState<string | null>(null);
   const [webSearchRun, setWebSearchRun] = useState<WebSearchRun | null>(null);
+
+  useEffect(() => {
+    if (!incidentId || !m || !d) {
+      setAnalysisFrameUrl(null);
+      return;
+    }
+    let active = true;
+    let objectUrl: string | null = null;
+    api.getAnalysisFrame(incidentId, m.id)
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setAnalysisFrameUrl(objectUrl);
+      })
+      .catch(() => { if (active) setAnalysisFrameUrl(null); });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [incidentId, m?.id, d?.id]);
+
+  const faceBox = explainability?.face_box;
+  const frameWidth = m?.width ?? 1;
+  const frameHeight = m?.height ?? 1;
+  const validFaceBox = !!faceBox && faceBox.length === 4 && frameWidth > 0 && frameHeight > 0;
+  const [faceLeft, faceTop, faceRight, faceBottom] = validFaceBox ? faceBox! : [0, 0, 0, 0];
+  const faceWidth = Math.max(1, faceRight - faceLeft);
+  const faceHeight = Math.max(1, faceBottom - faceTop);
+  const facePosition = {
+    left: `${(faceLeft / frameWidth) * 100}%`,
+    top: `${(faceTop / frameHeight) * 100}%`,
+    width: `${(faceWidth / frameWidth) * 100}%`,
+    height: `${(faceHeight / frameHeight) * 100}%`,
+  };
+  const strongestCell = heatmapGrid.flatMap((row, rowIndex) => row.map((value, columnIndex) => ({ value, rowIndex, columnIndex })))
+    .reduce<{ value: number; rowIndex: number; columnIndex: number } | null>(
+      (strongest, cell) => !strongest || cell.value > strongest.value ? cell : strongest,
+      null,
+    );
+  const renderHeatmapCells = (opacity: number) => heatmapGrid.flatMap((row, rowIndex) => row.map((value, columnIndex) => {
+    const normalized = Math.max(0, Math.min(1, value ?? 0));
+    const hue = Math.round(240 * (1 - normalized));
+    const strongest = strongestCell?.rowIndex === rowIndex && strongestCell.columnIndex === columnIndex;
+    return (
+      <span
+        key={`${rowIndex}-${columnIndex}`}
+        className={`block min-h-0 min-w-0 ${strongest ? "z-10 ring-2 ring-white" : ""}`}
+        style={{ backgroundColor: `hsl(${hue} 95% 52%)`, opacity, boxShadow: strongest ? "0 0 0 1px rgba(15, 23, 42, 0.8)" : undefined }}
+        title={`Cell ${rowIndex + 1}:${columnIndex + 1} model sensitivity ${normalized.toFixed(4)}`}
+      />
+    );
+  }));
 
   useEffect(() => {
     let active = true;
@@ -219,6 +294,83 @@ export default function UploadDetection() {
               {d?.compression_density != null && (
                 <ConfidenceBar label="Compression density anomaly" value={d.compression_density} tone="amber" />
               )}
+
+              <section className="mt-6 rounded-2xl border border-border bg-soft/30 p-4" aria-labelledby="facial-analysis-title">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 id="facial-analysis-title" className="text-[13px] font-semibold text-ink">Facial Manipulation Analysis</h3>
+                    <p className="mt-1 text-[11px] text-muted">Model contribution visualization, not proof of manipulated pixels.</p>
+                  </div>
+                  <StatusBadge tone={explainability?.status === "available" ? "amber" : "gray"}>
+                    {explainability?.status === "available" ? "Explainability available" : "Explainability unavailable"}
+                  </StatusBadge>
+                </div>
+                <p className="mt-3 text-[12px] text-muted leading-relaxed">
+                  {explainability?.message ?? "No explanation data is available for this detection result."}
+                  {explainability?.frame_timestamp_sec != null && ` Analyzed frame: ${explainability.frame_timestamp_sec.toFixed(2)} s.`}
+                </p>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="min-w-0">
+                    <p className="mb-2 text-[11px] font-semibold text-ink">Original {m?.kind === "video" ? "analysis frame" : "image"}</p>
+                    <div className="flex h-[220px] items-center justify-center overflow-hidden rounded-lg border border-border bg-neutral-950 p-2">
+                      {analysisFrameUrl ? (
+                        <img src={analysisFrameUrl} alt="Original frame used by the manipulation detector" className="max-h-full max-w-full object-contain" />
+                      ) : <span className="text-[11px] text-white/70">Loading analyzed frame…</span>}
+                    </div>
+                  </div>
+                  {explainability?.status === "available" && heatmapGrid.length > 0 && validFaceBox ? (
+                    <>
+                      <div className="min-w-0">
+                        <p className="mb-2 text-[11px] font-semibold text-ink">Face-region sensitivity</p>
+                        <div className="mx-auto relative overflow-hidden rounded-lg border border-border bg-neutral-950" style={{ width: `min(100%, ${Math.min(280, 220 * faceWidth / faceHeight)}px)`, aspectRatio: `${faceWidth} / ${faceHeight}` }}>
+                          {analysisFrameUrl && (
+                            <img
+                              src={analysisFrameUrl}
+                              alt="Face crop used for the contribution visualization"
+                              className="absolute max-w-none grayscale opacity-35"
+                              style={{ width: `${(frameWidth / faceWidth) * 100}%`, height: `${(frameHeight / faceHeight) * 100}%`, left: `${(-faceLeft / faceWidth) * 100}%`, top: `${(-faceTop / faceHeight) * 100}%` }}
+                            />
+                          )}
+                          {heatmapGrid[0]?.length > 0 && (
+                            <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${heatmapGrid[0].length}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${heatmapGrid.length}, minmax(0, 1fr))` }}>
+                              {renderHeatmapCells(0.9)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="mb-2 text-[11px] font-semibold text-ink">Contribution overlay</p>
+                        <div className="mx-auto relative overflow-hidden rounded-lg border border-border bg-neutral-950" style={{ width: `min(100%, ${Math.min(280, 220 * frameWidth / frameHeight)}px)`, aspectRatio: `${frameWidth} / ${frameHeight}` }}>
+                          {analysisFrameUrl && <img src={analysisFrameUrl} alt="Analyzed original frame" className="absolute inset-0 h-full w-full object-fill" />}
+                          <div className="absolute grid" style={{ ...facePosition, gridTemplateColumns: `repeat(${heatmapGrid[0]?.length ?? 1}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${heatmapGrid.length}, minmax(0, 1fr))` }}>
+                            {renderHeatmapCells(0.62)}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex min-h-[220px] flex-col justify-center rounded-lg border border-border bg-card p-4 text-[12px] text-muted md:col-span-2">
+                      <b className="mb-1 text-ink">{explainability?.status === "available" ? "Face-region visualization unavailable" : "Explainability unavailable"}</b>
+                      <span>{explainability?.message ?? "No explanation data is available for this detection result."}</span>
+                    </div>
+                  )}
+                </div>
+                {explainability?.status === "available" && heatmapGrid.length > 0 && validFaceBox && (
+                  <>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[11px] text-muted">
+                      <span>Model: {d?.model_name ?? "Not recorded"}</span>
+                      <span>Manipulation likelihood: {likelihood.toFixed(1)}%</span>
+                      {strongestCell && <span>Strongest sensitivity: cell {strongestCell.rowIndex + 1}:{strongestCell.columnIndex + 1}</span>}
+                      {faceBox && <span>Face detected: {Math.round(faceLeft)}, {Math.round(faceTop)} to {Math.round(faceRight)}, {Math.round(faceBottom)}</span>}
+                    </div>
+                    <div className="mt-2 flex items-center gap-2 text-[10px] text-muted" aria-label="Heatmap sensitivity scale">
+                      <span>Lower contribution</span><span className="h-2 flex-1 rounded-full bg-gradient-to-r from-blue-600 via-cyan-400 via-yellow-300 to-red-600" /><span>Higher contribution</span>
+                    </div>
+                  </>
+                )}
+              </section>
+
               <div className="grid grid-cols-2 gap-4 mt-6 pt-4 border-t border-border/60 text-[12px]">
                 <div>
                   <p className="text-muted font-medium">Model used</p>

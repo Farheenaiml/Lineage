@@ -25,6 +25,7 @@ class DetectionResultOut(BaseModel):
     likely_technique: str | None
     model_name: str
     explanation: str | None
+    explainability_json: str | None = None
     created_at: datetime
 
     class Config:

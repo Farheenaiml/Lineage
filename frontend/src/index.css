@@ -59,3 +59,16 @@ button { cursor: pointer; }
 .dark-ui .bg-\[\#B96255\] { background:#A04E42 !important; }
 .dark-ui .bg-\[\#C79B42\] { background:#AD8433 !important; }
 .dark-ui .hover\:bg-\[\#FAFBF9\]:hover { background:#263228 !important; }
+
+/* ---- 3D propagation globe overlay labels ---- */
+.geo-label { position:absolute; left:0; top:0; white-space:nowrap; font-size:11px; line-height:1.2; color:#e6f3ee;
+  background:rgba(8,20,26,.72); border:1px solid rgba(120,220,190,.28); backdrop-filter:blur(6px);
+  padding:3px 8px; border-radius:999px; transition:opacity .2s; display:flex; gap:6px; align-items:center; will-change:transform; }
+.geo-label b { font-weight:600; }
+.geo-label span { color:#8fd9be; font-size:10px; }
+.geo-label.sel { border-color:#4fe3a1; box-shadow:0 0 0 1px rgba(79,227,161,.35), 0 0 18px rgba(79,227,161,.25); }
+.geo-range { -webkit-appearance:none; appearance:none; background:transparent; position:absolute; inset:0; width:100%; pointer-events:none; height:20px; margin:0; }
+.geo-range::-webkit-slider-thumb { -webkit-appearance:none; pointer-events:auto; height:16px; width:16px; border-radius:50%; background:#4fe3a1; border:2px solid #0b1a24; box-shadow:0 0 10px rgba(79,227,161,.7); cursor:grab; }
+.geo-range::-moz-range-thumb { pointer-events:auto; height:14px; width:14px; border-radius:50%; background:#4fe3a1; border:2px solid #0b1a24; cursor:grab; }
+.geo-range::-webkit-slider-runnable-track { background:transparent; }
+.geo-range::-moz-range-track { background:transparent; }

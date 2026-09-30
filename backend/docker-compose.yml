@@ -18,12 +18,37 @@ services:
       timeout: 5s
       retries: 10
 
+  # Phase 3A: graph persistence. Optional for the API — if Neo4j is down, the graph
+  # endpoints fall back to the in-memory KnowledgeGraph automatically.
+  neo4j:
+    image: neo4j:5-community
+    restart: unless-stopped
+    environment:
+      # Set NEO4J_PASSWORD in your shell or a root .env (min 8 chars). Dev default only.
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-lineage-dev-password}
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512M
+    ports:
+      - "7474:7474"   # Neo4j Browser (HTTP)
+      - "7687:7687"   # Bolt
+    volumes:
+      - lineage_neo4j_data:/data
+      - lineage_neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$${NEO4J_AUTH#neo4j/}\" 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
   api:
     build: .
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+      neo4j:
+        condition: service_started
     environment:
       ENV: production
       DEBUG: "false"
@@ -36,6 +61,11 @@ services:
       MAX_UPLOAD_MB: "500"
       FILE_ENCRYPTION_KEY: ${FILE_ENCRYPTION_KEY:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-lineage-dev-password}
+      NEO4J_DATABASE: neo4j
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:
       - "8000:8000"
     volumes:
@@ -46,3 +76,5 @@ services:
 volumes:
   lineage_pg_data:
   lineage_uploads:
+  lineage_neo4j_data:
+  lineage_neo4j_logs:

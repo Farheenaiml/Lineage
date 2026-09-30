@@ -49,6 +49,35 @@ class Settings(BaseSettings):
     GEMINI_SEARCH_MODEL: str = "gemini-3.8-flash"
     MAX_WEB_SEARCHES_PER_MEDIA: int = 3
 
+    # --- Phase 3A: Neo4j graph persistence (optional) ---
+    # Leave NEO4J_URI blank to run without Neo4j: every graph endpoint then
+    # serves the in-memory KnowledgeGraph (the Phase 3A behaviour). These are
+    # backend-only settings and are never sent to the frontend.
+    NEO4J_URI: str = ""                  # e.g. bolt://localhost:7687 (neo4j:// for clusters)
+    NEO4J_USER: str = "neo4j"
+    NEO4J_PASSWORD: str = ""
+    NEO4J_DATABASE: str = "neo4j"
+    NEO4J_CONNECT_TIMEOUT: float = 3.0   # seconds; keeps the fallback fast when Neo4j is down
+    NEO4J_RETRY_SECONDS: float = 30.0    # after a failed connection, wait this long before retrying
+    # When true, reading an investigation's graph first re-syncs it (idempotent MERGE) so Neo4j
+    # never serves a stale view of the SQL records. Set false to only sync via the sync endpoint/CLI.
+    NEO4J_AUTO_SYNC: bool = True
+
+    # --- Phase 3B: Investigation Copilot (Graph RAG) ---
+    # "anthropic" uses ANTHROPIC_API_KEY; "none" disables the LLM. With no LLM (or no key) the
+    # Copilot still answers from the retrieved graph/evidence using a deterministic composer.
+    COPILOT_LLM_PROVIDER: str = "anthropic"
+    COPILOT_MODEL: str = "claude-opus-5-5"
+    COPILOT_MAX_TOKENS: int = 4000
+
+    # --- Phase 4: ML Intelligence (local, deterministic; all thresholds explainable) ---
+    ML_SIMILARITY_THRESHOLD: float = 0.75       # min perceptual-hash similarity (0-1) to report a pair
+    ML_CLUSTER_THRESHOLD: float = 0.85          # single-linkage edge threshold for clustering
+    ML_ANOMALY_MIN_OBSERVATIONS: int = 4        # timed observations needed to establish a baseline interval
+    ML_ANOMALY_MIN_RELATIONSHIPS: int = 3       # timed relationships needed for a propagation-timing baseline
+    ML_BURST_RATIO: float = 0.25                # interval < ratio x median interval counts as unusually fast
+    ML_GEO_SPREAD_KM: float = 500.0             # max distance between >=3 locations inside one normal interval
+
     # --- File storage ---
     DATA_DIR: str = "./data"
     UPLOADS_DIR: str = "./data/uploads"
@@ -65,7 +94,7 @@ class Settings(BaseSettings):
     # --- CORS ---
     # The Vite dev server's default origin. Add your deployed frontend's
     # origin here (comma-separated) once you have one.
-    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174"
 
     @property
     def cors_origins_list(self) -> list[str]:

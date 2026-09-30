@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { X, Loader2, Plus } from "lucide-react";
 import { useCase } from "../context/CaseContext";
-import { Source } from "../lib/api";
+import { Source, api } from "../lib/api";
 
 /**
  * A real data-entry form. This is what "adding a source" means in the actual
@@ -16,7 +16,10 @@ export default function AddSourceModal({
   onClose: () => void;
   onCreated?: (source: Source) => void;
 }) {
-  const { addSource, sources } = useCase();
+  const { addSource, sources, incidentId } = useCase();
+  const [placeName, setPlaceName] = useState("");
+  const [lat, setLat] = useState("");
+  const [lon, setLon] = useState("");
   const [platform, setPlatform] = useState("");
   const [account, setAccount] = useState("");
   const [url, setUrl] = useState("");
@@ -48,6 +51,17 @@ export default function AddSourceModal({
         similarity_score: similarity ? Number(similarity) : undefined,
         relationship_label: relationshipLabel.trim() || undefined,
       });
+
+      // Optional investigator-supplied location (stored with provenance; never guessed).
+      if (incidentId && lat.trim() !== "" && lon.trim() !== "") {
+        const la = Number(lat), lo = Number(lon);
+        if (!Number.isNaN(la) && !Number.isNaN(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180) {
+          await api.setSourceLocation(incidentId, created.id, {
+            latitude: la, longitude: lo, place_name: placeName.trim() || undefined,
+            confidence: 60, basis: "Location entered by the investigator when recording this source; not independently verified.",
+          });
+        }
+      }
 
       if (linkToSourceId) {
         await addRelationship(linkToSourceId, created.id, relationshipType, similarity ? Number(similarity) : undefined);
@@ -140,6 +154,19 @@ export default function AddSourceModal({
                 className="w-full h-11 rounded-xl border border-border px-3.5 text-[13px] outline-none focus:ring-2 focus:ring-brand/15"
               />
             </div>
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <label className="block text-[12px] font-medium mb-1.5">Location (optional — shows on the 3D map as “Investigator supplied”)</label>
+            <div className="grid grid-cols-3 gap-3">
+              <input value={placeName} onChange={(e) => setPlaceName(e.target.value)} placeholder="Place name"
+                className="h-11 rounded-xl border border-border px-3.5 text-[13px] outline-none focus:ring-2 focus:ring-brand/15" />
+              <input value={lat} onChange={(e) => setLat(e.target.value)} placeholder="Latitude" inputMode="decimal"
+                className="h-11 rounded-xl border border-border px-3.5 text-[13px] outline-none focus:ring-2 focus:ring-brand/15" />
+              <input value={lon} onChange={(e) => setLon(e.target.value)} placeholder="Longitude" inputMode="decimal"
+                className="h-11 rounded-xl border border-border px-3.5 text-[13px] outline-none focus:ring-2 focus:ring-brand/15" />
+            </div>
+            <p className="text-[11px] text-muted mt-1.5">Leave blank if unknown — coordinates are never guessed. You can also search a place later from the map.</p>
           </div>
 
           {sources.data.length > 0 && (

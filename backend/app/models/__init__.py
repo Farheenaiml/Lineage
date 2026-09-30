@@ -4,3 +4,5 @@ from app.models.media import MediaItem, DetectionResult, Fingerprint  # noqa: F4
 from app.models.source import Source, SourceRelationship, EvidenceItem  # noqa: F401
 from app.models.report import IncidentReport, AttributionGapEntry  # noqa: F401
 from app.models.web_search import WebSearchRun, WebSearchQuery  # noqa: F401
+from app.models.location import SourceLocation, RelationshipDirection  # noqa: F401
+from app.models.automation import AuditEvent, InvestigationReport, AlertDraft  # noqa: F401
